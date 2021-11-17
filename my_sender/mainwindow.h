@@ -1,5 +1,6 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
+#include <QDebug>
 #include "qstring.h"
 #define HAVE_REMOTE //一定要先define HAVA_REMOTE 再include "wpcap.h" 否则还是报错
 #include "pcap.h"   //Qt引入winpcap
@@ -64,7 +65,7 @@ struct ArpPacket {
 //定义ip头
 struct IpHeader
 {
-    unsigned char       h_verlen;       //版本号：IP协议的版本。对于IPv4来说值是4
+    unsigned char       version;       //版本号：IP协议的版本。对于IPv4来说值是4
     unsigned char       tos;            //服务类型(Type Of Service，TOS)：3位优先权字段(现已被忽略) + 4位TOS字段 + 1位保留字段(须为0)。4位TOS字段分别表示最小延时、最大吞吐量、最高可靠性、最小费用，其中最多有一个能置为1。应用程序根据实际需要来设置TOS值，如ssh和telnet这样的登录程序需要的是最小延时的服务，文件传输ftp需要的是最大吞吐量的服务
     unsigned short      total_len;      //总长度: 指整个IP数据报的长度，单位为字节，即IP数据报的最大长度为65535字节(2的16次方)
     unsigned short      ident;          //标识：唯一地标识主机发送的每一个数据报，其初始值是随机的，每发送一个数据报其值就加1。同一个数据报的所有分片都具有相同的标识值
@@ -79,8 +80,8 @@ struct IpHeader
 //定义tcp头
 struct TcpHeader
 {
-    unsigned short    th_sport;     //16位源端口
-    unsigned short    th_dport;     //16位目的端口
+    unsigned short    th_srcport;   //16位源端口
+    unsigned short    th_dstport;   //16位目的端口
     unsigned int      th_seq;       //32位序列号
     unsigned int      th_ack;       //32位确认号
     unsigned char     th_lenres;    //4位头部长度/6位保留字
@@ -115,12 +116,27 @@ public slots:
     void send_clicked();
 public:
     MainWindow(QWidget *parent = Q_NULLPTR);
-    pcap_if_t *alldevs;   //所有网络适配器
-    pcap_if_t *d;   //选中的网络适配器
-    int inum;   //选择网络适配器
-    pcap_t *adhandle;   //打开网络适配器，捕捉实例,是pcap_open返回的对象
+    pcap_if_t *alldevs;              //所有网络适配器
+    pcap_if_t *d;                    //选中的网络适配器
+    int inum;                        //选择网络适配器
+    pcap_t *adhandle;                //打开网络适配器，捕捉实例,是pcap_open返回的对象
     char errbuf[PCAP_ERRBUF_SIZE];   //错误缓冲区,大小为256
     ~MainWindow();
 private:
     Ui::MainWindow *ui;
 };
+
+/*
+    struct pcap_if
+    {
+        struct pcap_if *next;//指向下一个网卡
+
+        char *name;//网卡的标识符，唯一识别一个网卡
+
+        char *description;//用来描述网卡
+
+        struct pcap_addr*address;//网卡的地址，包括IP地址，网络掩码，广播地址等，类型中的成员变量在后面会写到
+
+        bpf_u_int32 flags;//接口标志
+    }
+*/

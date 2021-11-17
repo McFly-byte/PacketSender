@@ -1,16 +1,19 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent),
       ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
 
-    /* 获取本机设备列表
+    /* 获取本机设备列表 */
+    /*
      * pcap_findalldevs_ex (char *source, struct pcap_rmtauth *auth, pcap_if_t **alldevs, char *errbuf)
-     * 功能	创建一个网络设备列表，它们可以由 pcap_open()打开。
-     */
+     * 功能：获得指向网卡的指针（alldevs），这个即可以指向 本地也可以指向远程
+     * 功能：创建一个网络设备列表，它们可以由 pcap_open()打开。
+    */
     if ( pcap_findalldevs_ex( (char*)PCAP_SRC_IF_STRING, NULL, &alldevs, errbuf ) == -1 ){
         fprintf(stderr, "Error in pcap_findalldevs: %s\n", errbuf);
         exit(1);
@@ -28,45 +31,57 @@ MainWindow::MainWindow(QWidget *parent)
 }
 
 
-unsigned short CheckSum(unsigned short * buffer, int size)//计算检验和
+//计算检验和
+/* 若计算结果为0，则校验正确，否则校验失败。 */
+unsigned short CheckSum(unsigned short * buffer, int size)
 {
+    if( buffer == NULL ) return 0;
+
     unsigned long   cksum = 0;
     while (size > 1){
         cksum += *buffer++;
         size -= sizeof(unsigned short);
     }
-    if (size){
+
+    if (size)
         cksum += *(unsigned char *)buffer;
-    }
+
     cksum = (cksum >> 16) + (cksum & 0xffff);
     cksum += (cksum >> 16);
+
     return (unsigned short)(~cksum);
 }
 
 
-////发送函数
+//发送函数
 void  MainWindow::send_clicked() {
-    inum = ui->comboBox->currentIndex()+1;
+    inum = ui->comboBox->currentIndex()+1; //返回当前列表框中选中文本（网卡）的序号
+//    qDebug() << "inum:" << inum;
     /* 跳转到选中的适配器 */
     int i = 0;   //for循环变量
     for (d = alldevs, i = 0; i < inum - 1; d = d->next, i++);
     /* 打开设备 */
-    if ((adhandle = pcap_open(d->name,          // 设备名
-        65536,            // 65535保证能捕获到不同数据链路层上的每个数据包的全部内容
-        PCAP_OPENFLAG_PROMISCUOUS,    // 混杂模式
-        1000,             // 读取超时时间
-        NULL,             // 远程机器验证
-        errbuf            // 错误缓冲池
-    )) == NULL)
+    /*
+     * pcap_t * pcap_open (const char *source, int snaplen, int flags, int read_timeout, struct pcap_rmtauth *auth, char *errbuf)
+     * 功能:打开一个用来捕获或发送流量(仅WinPcap)的通用源
+    */
+    if ( (adhandle =
+          pcap_open(d->name,          // 设备名
+                    65536,            // 65535保证能捕获到不同数据链路层上的每个数据包的全部内容
+                    PCAP_OPENFLAG_PROMISCUOUS,    // 混杂模式
+                    1000,             // 读取超时时间
+                    NULL,             // 远程机器验证
+                    errbuf  )         // 错误缓冲池
+          ) == NULL )
     {
-        fprintf(stderr, "\nUnable to open the adapter. %s is not supported by WinPcap\n", d->name);
+        fprintf(stderr, "\nUnable to open the adapter. %s is not supported by WinPcap\n", d->name);//如果出错将错误信息打印
         /* 释放设备列表 */
         pcap_freealldevs(alldevs);
     }
 
     /*tcp协议 */
     if (ui->comboBox_2->currentIndex() == 0) {
-        string bb = ui->lineEdit_8->text().toStdString();
+        string bb = ui->lineEdit_8->text().toStdString();   //数据内容
         char *temp = new char[bb.size() + 1];
         strcpy(temp, bb.c_str());//temp为传输数据  bb.size() 为大小
         EthernetHeader eh;
@@ -89,11 +104,14 @@ void  MainWindow::send_clicked() {
         eh.srcMAC[3] = 0x72;
         eh.srcMAC[4] = 0x5f;
         eh.srcMAC[5] = 0xad;
-        eh.EthType = htons(ETH_IP);
-        //htons()--"Host to Network Short"
+        eh.EthType = htons(ETH_IP); //htons()--"Host to Network Short"
 
         //ip头部
-        ih.h_verlen = (4 << 4 | sizeof(ih) / sizeof(unsigned int));
+        qDebug() << sizeof( ih );
+        qDebug() << sizeof( unsigned int );
+        qDebug() << (4 << 4 | sizeof(ih) / sizeof(unsigned int));
+        ih.version = (4 << 4 | sizeof(ih) / sizeof(unsigned int)); // (4*2^4)|(20/4)
+        qDebug() << "ih.version: " << ih.version;
         ih.tos = 0;
         ih.total_len = htons((unsigned short)(sizeof(IpHeader) + sizeof(TcpHeader) + bb.size()));
         ih.ident = 1;
@@ -117,8 +135,8 @@ void  MainWindow::send_clicked() {
         psh.plen = htons(sizeof(TcpHeader) + bb.size());
 
         //tcp
-        th.th_sport = htons(ui->lineEdit_6->text().toInt());//源端口
-        th.th_dport = htons(ui->lineEdit_22->text().toInt());//目的端口
+        th.th_srcport = htons(ui->lineEdit_6->text().toInt());//源端口
+        th.th_dstport = htons(ui->lineEdit_22->text().toInt());//目的端口
         th.th_seq = htonl(ui->lineEdit_5->text().toInt());//序列号
         th.th_ack = ui->lineEdit_23->text().toInt();//确认号
         th.th_lenres = (sizeof(TcpHeader) / 4 << 4 | 0);//tcp长度
@@ -131,18 +149,20 @@ void  MainWindow::send_clicked() {
         memcpy(sendbuf, &psh, sizeof(PseudoHeader));
         memcpy(sendbuf + sizeof(PseudoHeader), &th, sizeof(TcpHeader));
         memcpy(sendbuf + sizeof(PseudoHeader) + sizeof(TcpHeader), temp, bb.size());
-        th.th_sum = CheckSum((unsigned short *)sendbuf, sizeof(PseudoHeader) + sizeof(TcpHeader) + bb.size());//tcp
+        th.th_sum = CheckSum((unsigned short *)sendbuf, sizeof(PseudoHeader) + sizeof(TcpHeader) + bb.size());//tcp校验和
         memset(sendbuf, 0, sizeof(sendbuf));
         memcpy(sendbuf, &ih, sizeof(IpHeader));
-        ih.checksum = CheckSum((unsigned short *)sendbuf, sizeof(IpHeader));//ip
+        ih.checksum = CheckSum((unsigned short *)sendbuf, sizeof(IpHeader));//ip校验和
 
         //填充发送缓冲区
+        /* 以太头+IP头+TCP头+数据 */
         memset(sendbuf, 0, MAX_BUFF_LEN);
         memcpy(sendbuf, (void *)&eh, sizeof(EthernetHeader));
         memcpy(sendbuf + sizeof(EthernetHeader), (void *)&ih, sizeof(IpHeader));
         memcpy(sendbuf + sizeof(EthernetHeader) + sizeof(IpHeader), (void *)&th, sizeof(TcpHeader));
         memcpy(sendbuf + sizeof(EthernetHeader) + sizeof(IpHeader) + sizeof(TcpHeader), temp, bb.size());
         int siz = sizeof(EthernetHeader) + sizeof(IpHeader) + sizeof(TcpHeader) + bb.size();
+
         //发送
         if (pcap_sendpacket(adhandle, sendbuf, siz) == 0)
             ui->textBrowser->append(" TCP Packet send succeed");
@@ -176,7 +196,7 @@ void  MainWindow::send_clicked() {
         eh.srcMAC[5] = 0xad;
 
         //ip
-        ih.h_verlen = (4 << 4 | sizeof(ih) / sizeof(unsigned int));//ip数据头总长度除以4
+        ih.version = (4 << 4 | sizeof(ih) / sizeof(unsigned int));//ip数据头总长度除以4
         ih.tos = 0;
         ih.total_len = htons((unsigned short)(sizeof(IpHeader)+sizeof(UdpHeader)+bb.size()));//从ip一直到包末尾的总长度
         ih.ident = htons(1);
