@@ -1,4 +1,5 @@
-# PacketSender
+# 网络编程技术PacketSender
+网络编程技术大作业
 六、发包器（85+）
 1）任务
 	设计针对windows/linux的发包器
